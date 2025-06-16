@@ -3,104 +3,88 @@ import sys
 import random
 import os
 
-# Initialize Pygame
+# Inicia o Pygame
 pygame.init()
 
+# Estado inicial do jogo
+state = "menu"  # opções: menu, difficulty, credits, game
+
+# Configurações iniciais
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 400, 600
+WIDTH, HEIGHT = DEFAULT_WIDTH, DEFAULT_HEIGHT
+WINDOW_TITLE = "Minesweeper"
+CELL_SIZE = 40
+BG_COLOR = (255, 255, 255)
+
+current_settings = {
+    "rows": 15,
+    "cols": 10,
+    "bombs": 20
+}
+
+ROWS = current_settings["rows"]
+COLS = current_settings["cols"]
+NUM_BOMBS = current_settings["bombs"]
+
+# Função de caminho para recursos (compatível com PyInstaller)
 def resource_path(relative_path):
-    # Get absolute path to resource, works for dev and for PyInstaller bundle
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
 
-icon = pygame.image.load(resource_path(r'images\unclicked-bomb.png'))
-icon = pygame.transform.scale(icon, (32, 32))
-pygame.display.set_icon(icon)
-
+# Fonte
 FONT = pygame.font.SysFont(None, 48)
 BUTTON_FONT = pygame.font.SysFont(None, 36)
-BG_COLOR = (255, 255, 255)  # White background (same as your fill color)
 
-def draw_text_center(text, y):
-    text_surface = FONT.render(text, True, (0, 0, 0))
-    text_rect = text_surface.get_rect(center=(WIDTH // 2, y))
-    screen.blit(text_surface, text_rect)
+# Janela principal
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption(WINDOW_TITLE)
+icon = pygame.image.load(resource_path(r'images\unclicked-bomb.png'))
+pygame.display.set_icon(pygame.transform.scale(icon, (32, 32)))
 
-def draw_button(text, rect):
-    pygame.draw.rect(screen, (0, 120, 215), rect)  # Blue button
-    pygame.draw.rect(screen, (0, 0, 0), rect, 2)   # Black border
-    button_text = BUTTON_FONT.render(text, True, (255, 255, 255))
-    button_rect = button_text.get_rect(center=rect.center)
-    screen.blit(button_text, button_rect)
-
-# Constants
-WIDTH, HEIGHT = 400, 600
-WINDOW_TITLE = "Minesweeper"
-ROWS, COLS = 15, 10
-CELL_SIZE = 40
-NUM_BOMBS = 20
-
-
-# Load images
+# Carrega imagens
 EMPTY_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
 BOMB_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
-REVEALED_TILES = {
-    i: pygame.image.load(resource_path(fr'images\{i}.png')) for i in range(9)
-}
+REVEALED_TILES = {i: pygame.image.load(resource_path(fr'images\{i}.png')) for i in range(9)}
 REVEALED_TILES[9] = pygame.image.load(resource_path(r'images\bomb-at-clicked-block.png'))
 FLAG_IMAGE = pygame.image.load(resource_path(r'images\flag.png'))
 
-# Scale celulas
+# Redimensiona imagens
 for key in REVEALED_TILES:
     REVEALED_TILES[key] = pygame.transform.scale(REVEALED_TILES[key], (CELL_SIZE, CELL_SIZE))
 EMPTY_BLOCK = pygame.transform.scale(EMPTY_BLOCK, (CELL_SIZE, CELL_SIZE))
 BOMB_BLOCK = pygame.transform.scale(BOMB_BLOCK, (CELL_SIZE, CELL_SIZE))
 FLAG_IMAGE = pygame.transform.scale(FLAG_IMAGE, (CELL_SIZE, CELL_SIZE))
 
-# Grid
+# Posições e grade
 grid_width = COLS * CELL_SIZE
 grid_height = ROWS * CELL_SIZE
 start_x = (WIDTH - grid_width) // 2
 start_y = (HEIGHT - grid_height) // 2
 
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption(WINDOW_TITLE)
-
-
+# Grade de jogo
 grid = [[None for _ in range(COLS)] for _ in range(ROWS)]
+revealed = [[False for _ in range(COLS)] for _ in range(ROWS)]
+flagged = [[False for _ in range(COLS)] for _ in range(ROWS)]
 
-def place_bombs():
-    # colaca bomba aleatoriamente
-    bomb_positions = set()
-    while len(bomb_positions) < NUM_BOMBS:
-        r = random.randint(0, ROWS - 1)
-        c = random.randint(0, COLS - 1)
-        if (r, c) not in bomb_positions:
-            bomb_positions.add((r, c))
-            grid[r][c] = 9  # bomba -- 9
+# ---------- Funções de interface ----------
+def draw_text_center(text, y):
+    text_surface = FONT.render(text, True, (0, 0, 0))
+    text_rect = text_surface.get_rect(center=(WIDTH // 2, y))
+    screen.blit(text_surface, text_rect)
 
-    # contador de bombas a volta da celulas
-    for row in range(ROWS):
-        for col in range(COLS):
-            if grid[row][col] == 9:
-                continue  # skipa as bombas
-            bomb_count = 0
-            for dr in [-1, 0, 1]:
-                for dc in [-1, 0, 1]:
-                    if dr == 0 and dc == 0:
-                        continue
-                    nr, nc = row + dr, col + dc
-                    if 0 <= nr < ROWS and 0 <= nc < COLS:
-                        if grid[nr][nc] == 9:
-                            bomb_count += 1
-            grid[row][col] = bomb_count
+def draw_button(text, rect):
+    pygame.draw.rect(screen, (0, 120, 215), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+    button_text = BUTTON_FONT.render(text, True, (255, 255, 255))
+    button_rect = button_text.get_rect(center=rect.center)
+    screen.blit(button_text, button_rect)
 
-# Draw the grid
 def draw_grid():
-    for row in range(ROWS):
-        for col in range(COLS):
+    for row in range(current_settings["rows"]):
+        for col in range(current_settings["cols"]):
             x = start_x + col * CELL_SIZE
             y = start_y + row * CELL_SIZE
 
@@ -112,74 +96,184 @@ def draw_grid():
             else:
                 screen.blit(EMPTY_BLOCK, (x, y))
 
+# ---------- Funções do jogo ----------
+def reset_game():
+    global grid, revealed, flagged
+    r, c = current_settings["rows"], current_settings["cols"]
+    grid = [[None for _ in range(c)] for _ in range(r)]
+    revealed = [[False for _ in range(c)] for _ in range(r)]
+    flagged = [[False for _ in range(c)] for _ in range(r)]
 
-revealed = [[False for _ in range(COLS)] for _ in range(ROWS)]
-flagged = [[False for _ in range(COLS)] for _ in range(ROWS)]
+def place_bombs():
+    r, c, b = current_settings["rows"], current_settings["cols"], current_settings["bombs"]
+    bomb_positions = set()
+    while len(bomb_positions) < b:
+        row = random.randint(0, r - 1)
+        col = random.randint(0, c - 1)
+        if (row, col) not in bomb_positions:
+            bomb_positions.add((row, col))
+            grid[row][col] = 9
+
+    for row in range(r):
+        for col in range(c):
+            if grid[row][col] == 9:
+                continue
+            count = sum(
+                1 for dr in [-1, 0, 1] for dc in [-1, 0, 1]
+                if 0 <= row+dr < r and 0 <= col+dc < c and grid[row+dr][col+dc] == 9
+            )
+            grid[row][col] = count
+
+def flood_fill(row, col):
+    r, c = current_settings["rows"], current_settings["cols"]
+    if not (0 <= row < r and 0 <= col < c) or revealed[row][col]:
+        return
+    revealed[row][col] = True
+    if grid[row][col] == 0:
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr or dc:
+                    flood_fill(row + dr, col + dc)
+
+def check_win():
+    r, c = current_settings["rows"], current_settings["cols"]
+    return all(
+        grid[row][col] == 9 or revealed[row][col]
+        for row in range(r) for col in range(c)
+    )
 
 def save_grid_to_file(filename="grid_layout.txt"):
     with open(filename, 'w') as f:
         for row in grid:
-            line = ''.join([str(cell) for cell in row])
-            f.write(line + '\n')
+            f.write(''.join(str(cell) for cell in row) + '\n')
 
-def flood_fill(row, col):
-    # Base case: if out of bounds or already revealed
-    if not (0 <= row < ROWS and 0 <= col < COLS):
-        return
-    if revealed[row][col]:
-        return
+# ---------- Telas ----------
+def main_menu():
+    global WIDTH, HEIGHT, screen
+    WIDTH, HEIGHT = DEFAULT_WIDTH, DEFAULT_HEIGHT
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
-    revealed[row][col] = True
+    new_game_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 30, 200, 50)
+    credits_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 40, 200, 50)
 
-    if grid[row][col] == 0:
-        # Continue flood fill in all 8 directions
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                if dr == 0 and dc == 0:
-                    continue
-                flood_fill(row + dr, col + dc)
+    while True:
+        screen.fill(BG_COLOR)
+        draw_text_center("Minesweeper", HEIGHT//2 - 100)
+        draw_button("Novo Jogo", new_game_rect)
+        draw_button("Creditos", credits_rect)
+        pygame.display.flip()
 
-def check_win():
-    for row in range(ROWS):
-        for col in range(COLS):
-            if grid[row][col] != 9 and not revealed[row][col]:
-                return False
-    return True
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if new_game_rect.collidepoint(event.pos): return "difficulty"
+                if credits_rect.collidepoint(event.pos): return "credits"
 
-def reset_game():
-    global grid, revealed, flagged
-    grid = [[None for _ in range(COLS)] for _ in range(ROWS)]
-    revealed = [[False for _ in range(COLS)] for _ in range(ROWS)]
-    flagged = [[False for _ in range(COLS)] for _ in range(ROWS)]
-    place_bombs()
+def difficulty_screen():
+    offset_x = 20  # deslocamento para a direita
+    input_boxes = {
+        "rows": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 - 80, 120, 40),
+        "cols": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 - 20, 120, 40),
+        "bombs": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 + 40, 120, 40),
+    }
+    labels = {"rows": "Linhas", "cols": "Colunas", "bombs": "Bombas"}
+    user_input = {k: str(current_settings[k]) for k in labels}
+    active_field = None
+    start_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 110, 200, 50)
+    error_message = ""
 
+    while True:
+        screen.fill(BG_COLOR)
+        draw_text_center("Dificuldade", HEIGHT//2 - 160)
+        for key, rect in input_boxes.items():
+            pygame.draw.rect(screen, (255, 255, 255), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, 2)
 
-# Main game loop
-def main():
-    clock = pygame.time.Clock()
+            # renderiza o rótulo alinhado à esquerda da caixa (com margem de 10 px)
+            label_surface = BUTTON_FONT.render(f"{labels[key]}:", True, (0, 0, 0))
+            screen.blit(label_surface, (rect.x - label_surface.get_width() - 10, rect.y + 5))
+
+            # renderiza o texto digitado dentro da caixa
+            input_surface = BUTTON_FONT.render(user_input[key], True, (0, 0, 0))
+            screen.blit(input_surface, (rect.x + 5, rect.y + 5))
+
+        if error_message:
+            err_surf = BUTTON_FONT.render(error_message, True, (200, 0, 0))
+            screen.blit(err_surf, (WIDTH//2 - err_surf.get_width()//2, HEIGHT//2 + 90))
+
+        draw_button("Começar", start_rect)
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for key, rect in input_boxes.items():
+                    if rect.collidepoint(event.pos):
+                        active_field = key
+                if start_rect.collidepoint(event.pos):
+                    try:
+                        rows = int(user_input["rows"])
+                        cols = int(user_input["cols"])
+                        bombs = int(user_input["bombs"])
+                        if not (5 <= rows <= 20): error_message = "Linhas: 5 a 20"; continue
+                        if not (5 <= cols <= 30): error_message = "Colunas: 5 a 30"; continue
+                        if not (1 <= bombs < rows * cols): error_message = "Bombas em excesso"; continue
+                        current_settings.update(rows=rows, cols=cols, bombs=bombs)
+                        return "game"
+                    except ValueError:
+                        error_message = "Apenas números"
+            elif event.type == pygame.KEYDOWN and active_field:
+                if event.key == pygame.K_BACKSPACE:
+                    user_input[active_field] = user_input[active_field][:-1]
+                elif event.unicode.isdigit():
+                    user_input[active_field] += event.unicode
+
+def credits_screen():
+    back_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 80, 200, 50)
+    while True:
+        screen.fill(BG_COLOR)
+        draw_text_center("Gonçalo Araújo", HEIGHT//2 - 40)
+        draw_text_center("2025", HEIGHT//2)
+        draw_button("Voltar", back_rect)
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if back_rect.collidepoint(event.pos):
+                    return "menu"
+
+# ---------- Execução principal ----------
+def run_game():
+    global state, screen, start_x, start_y, ROWS, COLS, WIDTH, HEIGHT
+
+    ROWS, COLS = current_settings["rows"], current_settings["cols"]
+    WIDTH, HEIGHT = COLS * CELL_SIZE, ROWS * CELL_SIZE
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    start_x = start_y = 0
+
+    reset_game()
     place_bombs()
     save_grid_to_file()
 
-    running = True
-    game_over = False
-    win = False
+    game_over, win = False, False
+    restart_rect = pygame.Rect(WIDTH//2 - 110, HEIGHT//2 + 40, 100, 50)
+    main_menu_rect = pygame.Rect(WIDTH//2 + 10, HEIGHT//2 + 40, 100, 50)
 
-    # Button rectangle
-    button_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 40, 200, 50)
-
-    while running:
+    while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                pygame.quit(); sys.exit()
 
             if not game_over and not win:
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    mouse_x, mouse_y = event.pos
-                    col = (mouse_x - start_x) // CELL_SIZE
-                    row = (mouse_y - start_y) // CELL_SIZE
-
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    col, row = mx // CELL_SIZE, my // CELL_SIZE
                     if 0 <= row < ROWS and 0 <= col < COLS:
-                        if not flagged[row][col]:
+                        if event.button == 1 and not flagged[row][col]:
                             if grid[row][col] == 9:
                                 revealed[row][col] = True
                                 game_over = True
@@ -187,44 +281,35 @@ def main():
                                 flood_fill(row, col)
                             else:
                                 revealed[row][col] = True
-
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Right click
-                    mouse_x, mouse_y = event.pos
-                    col = (mouse_x - start_x) // CELL_SIZE
-                    row = (mouse_y - start_y) // CELL_SIZE
-
-                    if 0 <= row < ROWS and 0 <= col < COLS:
-                        if not revealed[row][col]:
+                        elif event.button == 3 and not revealed[row][col]:
                             flagged[row][col] = not flagged[row][col]
-
-                # Check win condition
-                if check_win():
-                    win = True
-
+                        if check_win(): win = True
             else:
-                # Game over or win screen
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if button_rect.collidepoint(event.pos):
-                        # Restart game
-                        reset_game()
-                        game_over = False
-                        win = False
+                    if restart_rect.collidepoint(event.pos): reset_game(); return
+                    if main_menu_rect.collidepoint(event.pos): reset_game(); state = "menu"; return
 
         screen.fill(BG_COLOR)
-
         if game_over:
-            draw_text_center("Game Over!", HEIGHT // 2 - 20)
-            draw_button("Restart", button_rect)
+            draw_text_center("Perdeste!", HEIGHT // 2 - 20)
+            draw_button("Denovo", restart_rect)
+            draw_button("Menu", main_menu_rect)
         elif win:
-            draw_text_center("You Win!", HEIGHT // 2 - 20)
-            draw_button("Restart", button_rect)
+            draw_text_center("Ganhaste!", HEIGHT // 2 - 20)
+            draw_button("Denovo", restart_rect)
+            draw_button("Menu", main_menu_rect)
         else:
             draw_grid()
-
         pygame.display.flip()
-        clock.tick(60)
 
-    pygame.quit()
-    sys.exit()
+def main():
+    global state
+    clock = pygame.time.Clock()
+    while True:
+        if state == "menu": state = main_menu()
+        elif state == "difficulty": state = difficulty_screen()
+        elif state == "credits": state = credits_screen()
+        elif state == "game": run_game()
+        clock.tick(60)
 
 main()
