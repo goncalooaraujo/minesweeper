@@ -169,12 +169,14 @@ def main_menu():
 
     new_game_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 30, 200, 50)
     credits_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 40, 200, 50)
+    exit_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 110, 200, 50)
 
     while True:
         screen.fill(BG_COLOR)
         draw_text_center("Minesweeper", HEIGHT//2 - 100)
         draw_button("Novo Jogo", new_game_rect)
         draw_button("Creditos", credits_rect)
+        draw_button("Sair", exit_rect)
         pygame.display.flip()
 
         for event in pygame.event.get():
@@ -183,6 +185,7 @@ def main_menu():
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if new_game_rect.collidepoint(event.pos): return "difficulty"
                 if credits_rect.collidepoint(event.pos): return "credits"
+                if exit_rect.collidepoint(event.pos): return pygame.EXIT
 
 def difficulty_screen():
     offset_x = -30
