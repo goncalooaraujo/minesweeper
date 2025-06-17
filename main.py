@@ -3,11 +3,11 @@ import sys
 import random
 import os
 
-# Inicia o Pygame
+# Inicializa o Pygame
 pygame.init()
 
 # Estado inicial do jogo
-state = "menu"  # opções: menu, difficulty, credits, game
+state = "menu"  # opções possíveis: menu, difficulty, credits, game
 
 # Configurações iniciais
 DEFAULT_WIDTH, DEFAULT_HEIGHT = 400, 600
@@ -16,6 +16,7 @@ WINDOW_TITLE = "Minesweeper"
 CELL_SIZE = 40
 BG_COLOR = (255, 255, 255)
 
+# Definições actuais do jogo
 current_settings = {
     "rows": 15,
     "cols": 10,
@@ -26,7 +27,7 @@ ROWS = current_settings["rows"]
 COLS = current_settings["cols"]
 NUM_BOMBS = current_settings["bombs"]
 
-# Função de caminho para recursos (compatível com PyInstaller)
+# Função para obter o caminho para os recursos (compatível com PyInstaller)
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -34,48 +35,50 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-# Fonte
+# Fonte principal usada no jogo
 FONT = pygame.font.SysFont(None, 48)
 BUTTON_FONT = pygame.font.SysFont(None, 36)
 
-# Janela principal
+# Criação da janela principal
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption(WINDOW_TITLE)
 icon = pygame.image.load(resource_path(r'images\unclicked-bomb.png'))
 pygame.display.set_icon(pygame.transform.scale(icon, (32, 32)))
 
-# Carrega imagens
+# Carregamento das imagens usadas no jogo
 EMPTY_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
 BOMB_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
 REVEALED_TILES = {i: pygame.image.load(resource_path(fr'images\{i}.png')) for i in range(9)}
 REVEALED_TILES[9] = pygame.image.load(resource_path(r'images\bomb-at-clicked-block.png'))
 FLAG_IMAGE = pygame.image.load(resource_path(r'images\flag.png'))
 
-# Redimensiona imagens
+# Redimensionamento das imagens para o tamanho das células
 for key in REVEALED_TILES:
     REVEALED_TILES[key] = pygame.transform.scale(REVEALED_TILES[key], (CELL_SIZE, CELL_SIZE))
 EMPTY_BLOCK = pygame.transform.scale(EMPTY_BLOCK, (CELL_SIZE, CELL_SIZE))
 BOMB_BLOCK = pygame.transform.scale(BOMB_BLOCK, (CELL_SIZE, CELL_SIZE))
 FLAG_IMAGE = pygame.transform.scale(FLAG_IMAGE, (CELL_SIZE, CELL_SIZE))
 
-# Posições e grade
+# Cálculo de posições e dimensões da grelha
 grid_width = COLS * CELL_SIZE
 grid_height = ROWS * CELL_SIZE
 start_x = (WIDTH - grid_width) // 2
 start_y = (HEIGHT - grid_height) // 2
 
-# Grade de jogo
+# Inicialização das estruturas de dados da grelha
 grid = [[None for _ in range(COLS)] for _ in range(ROWS)]
 revealed = [[False for _ in range(COLS)] for _ in range(ROWS)]
 flagged = [[False for _ in range(COLS)] for _ in range(ROWS)]
 
 # ---------- Funções de interface ----------
 def draw_text_center(text, y):
+    # Desenha texto centrado na horizontal
     text_surface = FONT.render(text, True, (0, 0, 0))
     text_rect = text_surface.get_rect(center=(WIDTH // 2, y))
     screen.blit(text_surface, text_rect)
 
 def draw_button(text, rect):
+    # Desenha um botão com texto
     pygame.draw.rect(screen, (0, 120, 215), rect)
     pygame.draw.rect(screen, (0, 0, 0), rect, 2)
     button_text = BUTTON_FONT.render(text, True, (255, 255, 255))
@@ -83,10 +86,11 @@ def draw_button(text, rect):
     screen.blit(button_text, button_rect)
 
 def draw_grid(offset_y=0):
+    # Desenha a grelha de jogo com o estado atual das células
     for row in range(current_settings["rows"]):
         for col in range(current_settings["cols"]):
             x = start_x + col * CELL_SIZE
-            y = row * CELL_SIZE + offset_y  # Removed start_y
+            y = row * CELL_SIZE + offset_y
 
             if revealed[row][col]:
                 value = grid[row][col]
@@ -99,6 +103,7 @@ def draw_grid(offset_y=0):
 
 # ---------- Funções do jogo ----------
 def reset_game():
+    # Reinicia o estado do jogo (nova grelha, sem revelações nem bandeiras)
     global grid, revealed, flagged
     r, c = current_settings["rows"], current_settings["cols"]
     grid = [[None for _ in range(c)] for _ in range(r)]
@@ -106,10 +111,11 @@ def reset_game():
     flagged = [[False for _ in range(c)] for _ in range(r)]
 
 def place_bombs_safe(start_row, start_col):
+    # Coloca as bombas aleatoriamente, garantindo que a primeira célula clicada é segura
     r, c, b = current_settings["rows"], current_settings["cols"], current_settings["bombs"]
     bomb_positions = set()
 
-    # Safe zone: the first clicked cell and its 8 neighbors
+    # Zona segura: célula inicial e as 8 adjacentes
     safe_zone = {
         (start_row + dr, start_col + dc)
         for dr in [-1, 0, 1]
@@ -124,7 +130,7 @@ def place_bombs_safe(start_row, start_col):
             bomb_positions.add((row, col))
             grid[row][col] = 9
 
-    # Fill in the number of adjacent bombs for each cell
+    # Calcula o número de bombas adjacentes para cada célula
     for row in range(r):
         for col in range(c):
             if grid[row][col] == 9:
@@ -135,8 +141,8 @@ def place_bombs_safe(start_row, start_col):
             )
             grid[row][col] = count
 
-
 def flood_fill(row, col):
+    # Revela automaticamente células vazias e as suas vizinhas recursivamente
     r, c = current_settings["rows"], current_settings["cols"]
     if not (0 <= row < r and 0 <= col < c) or revealed[row][col]:
         return
@@ -148,6 +154,7 @@ def flood_fill(row, col):
                     flood_fill(row + dr, col + dc)
 
 def check_win():
+    # Verifica se o jogador ganhou (todas as células não-bomba estão reveladas)
     r, c = current_settings["rows"], current_settings["cols"]
     return all(
         grid[row][col] == 9 or revealed[row][col]
@@ -411,8 +418,6 @@ def run_game():
             draw_grid(offset_y=TOP_BAR_HEIGHT)
 
         pygame.display.flip()
-
-
 
 def main():
     global state
