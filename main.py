@@ -47,10 +47,14 @@ pygame.display.set_icon(pygame.transform.scale(icon, (32, 32)))
 
 # Carregamento das imagens usadas no jogo
 EMPTY_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
-BOMB_BLOCK = pygame.image.load(resource_path(r'images\empty-block.png'))
-REVEALED_TILES = {i: pygame.image.load(resource_path(fr'images\{i}.png')) for i in range(9)}
-REVEALED_TILES[9] = pygame.image.load(resource_path(r'images\bomb-at-clicked-block.png'))
+BOMB_BLOCK = pygame.image.load(resource_path(r'images\unclicked-bomb.png'))  # unclicked bomb
+WRONG_FLAG = pygame.image.load(resource_path(r'images\wrong-flag.png'))      # wrong flag
 FLAG_IMAGE = pygame.image.load(resource_path(r'images\flag.png'))
+
+REVEALED_TILES = {i: pygame.image.load(resource_path(fr'images\{i}.png')) for i in range(9)}
+REVEALED_TILES[9] = pygame.image.load(resource_path(r'images\bomb-at-clicked-block.png'))  # clicked bomb
+
+
 
 # Redimensionamento das imagens para o tamanho das células
 for key in REVEALED_TILES:
@@ -84,6 +88,31 @@ def draw_button(text, rect):
     button_text = BUTTON_FONT.render(text, True, (255, 255, 255))
     button_rect = button_text.get_rect(center=rect.center)
     screen.blit(button_text, button_rect)
+
+def draw_text_with_background(text, y, alpha=180, font_size=40):
+    font = pygame.font.Font(None, font_size)
+    text_surf = font.render(text, True, (0, 0, 0))
+    text_rect = text_surf.get_rect(center=(WIDTH // 2, y))
+
+    # Create semi-transparent surface
+    padding = 4
+    bg_width = text_rect.width + padding
+    bg_height = text_rect.height + padding
+    bg_surf = pygame.Surface((bg_width, bg_height), pygame.SRCALPHA)
+
+    # Draw rounded rectangle on the surface
+    rect = pygame.Rect(0, 0, bg_width, bg_height)
+    pygame.draw.rect(bg_surf, (255, 255, 255, alpha), rect, border_radius=10)
+
+    # Position the background centered behind the text
+    bg_rect = bg_surf.get_rect(center=text_rect.center)
+
+    # Blit background and text
+    screen.blit(bg_surf, bg_rect)
+    screen.blit(text_surf, text_rect)
+
+
+
 
 def draw_grid(offset_y=0):
     # Desenha a grelha de jogo com o estado atual das células
@@ -328,19 +357,23 @@ def run_game():
     WIDTH, HEIGHT = COLS * CELL_SIZE, ROWS * CELL_SIZE + TOP_BAR_HEIGHT
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     start_x = 0
-    start_y = 0  # no longer used in draw_grid
+    start_y = 0
 
     reset_game()
     bombs_placed = False
     start_time = None
     flags_used = 0
-    final_time = None  # To store final elapsed time when game ends
+    final_time = None
 
     game_over, win = False, False
+    reveal_time = None  # NEW: Track when game ends to delay showing UI
+
     restart_rect = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 40, 100, 50)
     main_menu_rect = pygame.Rect(WIDTH // 2 + 10, HEIGHT // 2 + 40, 100, 50)
 
     while True:
+        current_time = pygame.time.get_ticks()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -351,7 +384,7 @@ def run_game():
                     mx, my = event.pos
 
                     if my < TOP_BAR_HEIGHT:
-                        continue  # Ignore clicks on the top bar
+                        continue
 
                     col, row = mx // CELL_SIZE, (my - TOP_BAR_HEIGHT) // CELL_SIZE
                     if 0 <= row < ROWS and 0 <= col < COLS:
@@ -364,6 +397,7 @@ def run_game():
                             if grid[row][col] == 9:
                                 revealed[row][col] = True
                                 game_over = True
+                                reveal_time = current_time  # Record when game ends
                             elif grid[row][col] == 0:
                                 flood_fill(row, col)
                             else:
@@ -374,7 +408,9 @@ def run_game():
 
                         if check_win():
                             win = True
-            else:
+                            reveal_time = current_time  # Record when game ends
+
+            elif reveal_time and current_time - reveal_time >= 1000:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if restart_rect.collidepoint(event.pos):
                         reset_game()
@@ -384,43 +420,53 @@ def run_game():
                         state = "menu"
                         return
 
-        # Calculate elapsed time or fix it on game end
+        # Timer display
         if start_time and not (game_over or win):
-            elapsed_sec = (pygame.time.get_ticks() - start_time) // 1000
+            elapsed_sec = (current_time - start_time) // 1000
         elif (game_over or win) and final_time is None:
-            # Store final time once when game ends
-            final_time = (pygame.time.get_ticks() - start_time) // 1000
+            final_time = (current_time - start_time) // 1000
             elapsed_sec = final_time
         else:
             elapsed_sec = final_time if final_time is not None else 0
 
-        # DRAWING PHASE
+        # DRAW
         screen.fill(BG_COLOR)
 
-        # Draw top bar
         pygame.draw.rect(screen, (220, 220, 220), (0, 0, WIDTH, TOP_BAR_HEIGHT))
         bombs_left = current_settings["bombs"] - flags_used
         bomb_text = BUTTON_FONT.render(f"Bombas: {bombs_left}", True, (0, 0, 0))
         screen.blit(bomb_text, (10, 5))
-
         time_text = BUTTON_FONT.render(f"Tempo: {elapsed_sec}s", True, (0, 0, 0))
         screen.blit(time_text, (WIDTH - time_text.get_width() - 10, 5))
 
-        if game_over:
-            draw_text_center("Perdeste!", HEIGHT // 2 - 40)
+        if (game_over or win) and reveal_time and current_time - reveal_time < 1000:
+            # Show full grid for 1 second
+            for r in range(ROWS):
+                for c in range(COLS):
+                    revealed[r][c] = True
+            draw_grid(offset_y=TOP_BAR_HEIGHT)
+
+        elif game_over and reveal_time and current_time - reveal_time >= 1000:
+            draw_grid(offset_y=TOP_BAR_HEIGHT)
+            draw_text_with_background("Perdeste!", HEIGHT // 2 - 40, font_size=80)
+
             draw_button("Denovo", restart_rect)
             draw_button("Menu", main_menu_rect)
-        elif win:
-            draw_text_center("Ganhaste!", HEIGHT // 2 - 40)
+
+        elif win and reveal_time and current_time - reveal_time >= 1000:
+            draw_grid(offset_y=TOP_BAR_HEIGHT)
+            draw_text_with_background("Ganhaste!", HEIGHT // 2 - 40, font_size=80)
             if final_time is not None:
                 time_finish_text = BUTTON_FONT.render(f"Tempo final: {final_time}s", True, (0, 0, 0))
                 screen.blit(time_finish_text, ((WIDTH - time_finish_text.get_width()) // 2, HEIGHT // 2))
             draw_button("Denovo", restart_rect)
             draw_button("Menu", main_menu_rect)
+
         else:
             draw_grid(offset_y=TOP_BAR_HEIGHT)
 
         pygame.display.flip()
+
 
 def main():
     global state
