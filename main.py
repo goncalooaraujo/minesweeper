@@ -154,11 +154,6 @@ def check_win():
         for row in range(r) for col in range(c)
     )
 
-def save_grid_to_file(filename="grid_layout.txt"):
-    with open(filename, 'w') as f:
-        for row in grid:
-            f.write(''.join(str(cell) for cell in row) + '\n')
-
 # ---------- Telas ----------
 def main_menu():
     global WIDTH, HEIGHT, screen
@@ -353,7 +348,6 @@ def run_game():
                         if not bombs_placed:
                             place_bombs_safe(row, col)
                             bombs_placed = True
-                            save_grid_to_file()
                             start_time = pygame.time.get_ticks()
 
                         if event.button == 1 and not flagged[row][col]:
