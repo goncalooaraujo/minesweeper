@@ -104,25 +104,36 @@ def reset_game():
     revealed = [[False for _ in range(c)] for _ in range(r)]
     flagged = [[False for _ in range(c)] for _ in range(r)]
 
-def place_bombs():
+def place_bombs_safe(start_row, start_col):
     r, c, b = current_settings["rows"], current_settings["cols"], current_settings["bombs"]
     bomb_positions = set()
+
+    # Safe zone: the first clicked cell and its 8 neighbors
+    safe_zone = {
+        (start_row + dr, start_col + dc)
+        for dr in [-1, 0, 1]
+        for dc in [-1, 0, 1]
+        if 0 <= start_row + dr < r and 0 <= start_col + dc < c
+    }
+
     while len(bomb_positions) < b:
         row = random.randint(0, r - 1)
         col = random.randint(0, c - 1)
-        if (row, col) not in bomb_positions:
+        if (row, col) not in bomb_positions and (row, col) not in safe_zone:
             bomb_positions.add((row, col))
             grid[row][col] = 9
 
+    # Fill in the number of adjacent bombs for each cell
     for row in range(r):
         for col in range(c):
             if grid[row][col] == 9:
                 continue
             count = sum(
                 1 for dr in [-1, 0, 1] for dc in [-1, 0, 1]
-                if 0 <= row+dr < r and 0 <= col+dc < c and grid[row+dr][col+dc] == 9
+                if 0 <= row + dr < r and 0 <= col + dc < c and grid[row + dr][col + dc] == 9
             )
             grid[row][col] = count
+
 
 def flood_fill(row, col):
     r, c = current_settings["rows"], current_settings["cols"]
@@ -171,36 +182,70 @@ def main_menu():
                 if credits_rect.collidepoint(event.pos): return "credits"
 
 def difficulty_screen():
-    offset_x = 20  # deslocamento para a direita
-    input_boxes = {
-        "rows": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 - 80, 120, 40),
-        "cols": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 - 20, 120, 40),
-        "bombs": pygame.Rect(WIDTH//2 - 60 + offset_x, HEIGHT//2 + 40, 120, 40),
+    offset_x = -30
+    slider_width = 200
+    slider_height = 10
+    knob_radius = 10
+
+    # Slider ranges
+    ranges = {
+        "rows": (5, 20),
+        "cols": (5, 30),
     }
-    labels = {"rows": "Linhas", "cols": "Colunas", "bombs": "Bombas"}
-    user_input = {k: str(current_settings[k]) for k in labels}
-    active_field = None
-    start_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 110, 200, 50)
+
+    # Initial values
+    values = {
+        "rows": current_settings["rows"],
+        "cols": current_settings["cols"],
+        "bombs": current_settings["bombs"],
+    }
+
+    dragging = {"rows": False, "cols": False, "bombs": False}
+
+    # Positions for sliders
+    slider_y_positions = {
+        "rows": HEIGHT//2 - 60,
+        "cols": HEIGHT//2,
+        "bombs": HEIGHT//2 + 60,
+    }
+
+    start_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 130, 200, 50)
     error_message = ""
+
+    def draw_slider(name, min_val, max_val, value, y):
+        # Draw line
+        x = WIDTH // 2 + offset_x
+        pygame.draw.line(screen, (200, 200, 200), (x, y), (x + slider_width, y), slider_height)
+
+        # Position knob
+        knob_x = int(x + ((value - min_val) / (max_val - min_val)) * slider_width)
+        pygame.draw.circle(screen, (100, 100, 250), (knob_x, y), knob_radius)
+
+        # Draw label
+        label = f"{labels[name]}: {value}"
+        label_surface = BUTTON_FONT.render(label, True, (0, 0, 0))
+        screen.blit(label_surface, (x - label_surface.get_width() - 15, y - 10))
+
+        return pygame.Rect(knob_x - knob_radius, y - knob_radius, knob_radius * 2, knob_radius * 2)
+
+    labels = {"rows": "Linhas", "cols": "Colunas", "bombs": "Bombas"}
 
     while True:
         screen.fill(BG_COLOR)
         draw_text_center("Dificuldade", HEIGHT//2 - 160)
-        for key, rect in input_boxes.items():
-            pygame.draw.rect(screen, (255, 255, 255), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, 2)
 
-            # renderiza o rótulo alinhado à esquerda da caixa (com margem de 10 px)
-            label_surface = BUTTON_FONT.render(f"{labels[key]}:", True, (0, 0, 0))
-            screen.blit(label_surface, (rect.x - label_surface.get_width() - 10, rect.y + 5))
+        # Update bombs slider range
+        max_bombs = max(5, (values["rows"] * values["cols"]) // 2)
+        values["bombs"] = min(max(5, values["bombs"]), max_bombs)
 
-            # renderiza o texto digitado dentro da caixa
-            input_surface = BUTTON_FONT.render(user_input[key], True, (0, 0, 0))
-            screen.blit(input_surface, (rect.x + 5, rect.y + 5))
+        knob_rects = {}
+        for key in ["rows", "cols"]:
+            knob_rects[key] = draw_slider(key, ranges[key][0], ranges[key][1], values[key], slider_y_positions[key])
+        knob_rects["bombs"] = draw_slider("bombs", 5, max_bombs, values["bombs"], slider_y_positions["bombs"])
 
         if error_message:
             err_surf = BUTTON_FONT.render(error_message, True, (200, 0, 0))
-            screen.blit(err_surf, (WIDTH//2 - err_surf.get_width()//2, HEIGHT//2 + 90))
+            screen.blit(err_surf, (WIDTH//2 - err_surf.get_width()//2, HEIGHT//2 + 100))
 
         draw_button("Começar", start_rect)
         pygame.display.flip()
@@ -208,27 +253,38 @@ def difficulty_screen():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                for key, rect in input_boxes.items():
-                    if rect.collidepoint(event.pos):
-                        active_field = key
-                if start_rect.collidepoint(event.pos):
-                    try:
-                        rows = int(user_input["rows"])
-                        cols = int(user_input["cols"])
-                        bombs = int(user_input["bombs"])
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    for key, rect in knob_rects.items():
+                        if rect.collidepoint(event.pos):
+                            dragging[key] = True
+                    if start_rect.collidepoint(event.pos):
+                        rows, cols, bombs = values["rows"], values["cols"], values["bombs"]
                         if not (5 <= rows <= 20): error_message = "Linhas: 5 a 20"; continue
                         if not (5 <= cols <= 30): error_message = "Colunas: 5 a 30"; continue
-                        if not (1 <= bombs < rows * cols): error_message = "Bombas em excesso"; continue
+                        if not (5 <= bombs <= (rows * cols) // 2): error_message = "Bombas inválidas"; continue
                         current_settings.update(rows=rows, cols=cols, bombs=bombs)
                         return "game"
-                    except ValueError:
-                        error_message = "Apenas números"
-            elif event.type == pygame.KEYDOWN and active_field:
-                if event.key == pygame.K_BACKSPACE:
-                    user_input[active_field] = user_input[active_field][:-1]
-                elif event.unicode.isdigit():
-                    user_input[active_field] += event.unicode
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    for key in dragging: dragging[key] = False
+
+            elif event.type == pygame.MOUSEMOTION:
+                if any(dragging.values()):
+                    mx = event.pos[0]
+                    x_start = WIDTH // 2 + offset_x
+                    for key in dragging:
+                        if dragging[key]:
+                            if key == "bombs":
+                                min_val, max_val = 5, max_bombs
+                            else:
+                                min_val, max_val = ranges[key]
+                            relative_x = max(0, min(mx - x_start, slider_width))
+                            ratio = relative_x / slider_width
+                            new_value = int(min_val + round((max_val - min_val) * ratio))
+                            values[key] = new_value
 
 def credits_screen():
     back_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 80, 200, 50)
@@ -256,8 +312,7 @@ def run_game():
     start_x = start_y = 0
 
     reset_game()
-    place_bombs()
-    save_grid_to_file()
+    bombs_placed = False  # defer placing bombs until first click
 
     game_over, win = False, False
     restart_rect = pygame.Rect(WIDTH//2 - 110, HEIGHT//2 + 40, 100, 50)
@@ -273,6 +328,11 @@ def run_game():
                     mx, my = event.pos
                     col, row = mx // CELL_SIZE, my // CELL_SIZE
                     if 0 <= row < ROWS and 0 <= col < COLS:
+                        if not bombs_placed:
+                            place_bombs_safe(row, col)
+                            bombs_placed = True
+                            save_grid_to_file()
+                        
                         if event.button == 1 and not flagged[row][col]:
                             if grid[row][col] == 9:
                                 revealed[row][col] = True
@@ -283,11 +343,32 @@ def run_game():
                                 revealed[row][col] = True
                         elif event.button == 3 and not revealed[row][col]:
                             flagged[row][col] = not flagged[row][col]
-                        if check_win(): win = True
+                        if check_win():
+                            win = True
             else:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if restart_rect.collidepoint(event.pos): reset_game(); return
-                    if main_menu_rect.collidepoint(event.pos): reset_game(); state = "menu"; return
+                    if restart_rect.collidepoint(event.pos):
+                        reset_game()
+                        return
+                    if main_menu_rect.collidepoint(event.pos):
+                        reset_game()
+                        state = "menu"
+                        return
+
+        screen.fill(BG_COLOR)
+        if game_over:
+            draw_text_center("Perdeste!", HEIGHT // 2 - 20)
+            draw_button("Denovo", restart_rect)
+            draw_button("Menu", main_menu_rect)
+        elif win:
+            draw_text_center("Ganhaste!", HEIGHT // 2 - 20)
+            draw_button("Denovo", restart_rect)
+            draw_button("Menu", main_menu_rect)
+        else:
+            draw_grid()
+
+        pygame.display.flip()
+
 
         screen.fill(BG_COLOR)
         if game_over:
