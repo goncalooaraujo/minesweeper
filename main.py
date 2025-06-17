@@ -82,11 +82,11 @@ def draw_button(text, rect):
     button_rect = button_text.get_rect(center=rect.center)
     screen.blit(button_text, button_rect)
 
-def draw_grid():
+def draw_grid(offset_y=0):
     for row in range(current_settings["rows"]):
         for col in range(current_settings["cols"]):
             x = start_x + col * CELL_SIZE
-            y = start_y + row * CELL_SIZE
+            y = row * CELL_SIZE + offset_y  # Removed start_y
 
             if revealed[row][col]:
                 value = grid[row][col]
@@ -95,6 +95,7 @@ def draw_grid():
                 screen.blit(FLAG_IMAGE, (x, y))
             else:
                 screen.blit(EMPTY_BLOCK, (x, y))
+
 
 # ---------- Funções do jogo ----------
 def reset_game():
@@ -189,8 +190,8 @@ def difficulty_screen():
 
     # Slider ranges
     ranges = {
-        "rows": (5, 20),
-        "cols": (5, 30),
+        "rows": (8, 20),
+        "cols": (8, 25),
     }
 
     # Initial values
@@ -234,14 +235,17 @@ def difficulty_screen():
         screen.fill(BG_COLOR)
         draw_text_center("Dificuldade", HEIGHT//2 - 160)
 
-        # Update bombs slider range
-        max_bombs = max(5, (values["rows"] * values["cols"]) // 2)
-        values["bombs"] = min(max(5, values["bombs"]), max_bombs)
+        # Calculate min and max bombs based on current rows and cols
+        min_bombs = max(5, int(values["rows"] * values["cols"] * 0.08))
+        max_bombs = max(min_bombs, (values["rows"] * values["cols"]) // 3)
+
+        # Clamp bombs value within new min and max bombs
+        values["bombs"] = max(min_bombs, min(values["bombs"], max_bombs))
 
         knob_rects = {}
         for key in ["rows", "cols"]:
             knob_rects[key] = draw_slider(key, ranges[key][0], ranges[key][1], values[key], slider_y_positions[key])
-        knob_rects["bombs"] = draw_slider("bombs", 5, max_bombs, values["bombs"], slider_y_positions["bombs"])
+        knob_rects["bombs"] = draw_slider("bombs", min_bombs, max_bombs, values["bombs"], slider_y_positions["bombs"])
 
         if error_message:
             err_surf = BUTTON_FONT.render(error_message, True, (200, 0, 0))
@@ -261,15 +265,23 @@ def difficulty_screen():
                             dragging[key] = True
                     if start_rect.collidepoint(event.pos):
                         rows, cols, bombs = values["rows"], values["cols"], values["bombs"]
-                        if not (5 <= rows <= 20): error_message = "Linhas: 5 a 20"; continue
-                        if not (5 <= cols <= 30): error_message = "Colunas: 5 a 30"; continue
-                        if not (5 <= bombs <= (rows * cols) // 2): error_message = "Bombas inválidas"; continue
+                        min_bombs_check = max(5, int(rows * cols * 0.08))
+                        if not (ranges["rows"][0] <= rows <= ranges["rows"][1]):
+                            error_message = f"Linhas: {ranges['rows'][0]} a {ranges['rows'][1]}"
+                            continue
+                        if not (ranges["cols"][0] <= cols <= ranges["cols"][1]):
+                            error_message = f"Colunas: {ranges['cols'][0]} a {ranges['cols'][1]}"
+                            continue
+                        if not (min_bombs_check <= bombs <= (rows * cols) // 2):
+                            error_message = f"Bombas: mínimo {min_bombs_check}"
+                            continue
                         current_settings.update(rows=rows, cols=cols, bombs=bombs)
                         return "game"
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
-                    for key in dragging: dragging[key] = False
+                    for key in dragging:
+                        dragging[key] = False
 
             elif event.type == pygame.MOUSEMOTION:
                 if any(dragging.values()):
@@ -278,7 +290,7 @@ def difficulty_screen():
                     for key in dragging:
                         if dragging[key]:
                             if key == "bombs":
-                                min_val, max_val = 5, max_bombs
+                                min_val, max_val = min_bombs, max_bombs
                             else:
                                 min_val, max_val = ranges[key]
                             relative_x = max(0, min(mx - x_start, slider_width))
@@ -306,33 +318,44 @@ def credits_screen():
 def run_game():
     global state, screen, start_x, start_y, ROWS, COLS, WIDTH, HEIGHT
 
+    TOP_BAR_HEIGHT = 30
     ROWS, COLS = current_settings["rows"], current_settings["cols"]
-    WIDTH, HEIGHT = COLS * CELL_SIZE, ROWS * CELL_SIZE
+    WIDTH, HEIGHT = COLS * CELL_SIZE, ROWS * CELL_SIZE + TOP_BAR_HEIGHT
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    start_x = start_y = 0
+    start_x = 0
+    start_y = 0  # no longer used in draw_grid
 
     reset_game()
-    bombs_placed = False  # defer placing bombs until first click
+    bombs_placed = False
+    start_time = None
+    flags_used = 0
+    final_time = None  # To store final elapsed time when game ends
 
     game_over, win = False, False
-    restart_rect = pygame.Rect(WIDTH//2 - 110, HEIGHT//2 + 40, 100, 50)
-    main_menu_rect = pygame.Rect(WIDTH//2 + 10, HEIGHT//2 + 40, 100, 50)
+    restart_rect = pygame.Rect(WIDTH // 2 - 110, HEIGHT // 2 + 40, 100, 50)
+    main_menu_rect = pygame.Rect(WIDTH // 2 + 10, HEIGHT // 2 + 40, 100, 50)
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                pygame.quit()
+                sys.exit()
 
             if not game_over and not win:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = event.pos
-                    col, row = mx // CELL_SIZE, my // CELL_SIZE
+
+                    if my < TOP_BAR_HEIGHT:
+                        continue  # Ignore clicks on the top bar
+
+                    col, row = mx // CELL_SIZE, (my - TOP_BAR_HEIGHT) // CELL_SIZE
                     if 0 <= row < ROWS and 0 <= col < COLS:
                         if not bombs_placed:
                             place_bombs_safe(row, col)
                             bombs_placed = True
                             save_grid_to_file()
-                        
+                            start_time = pygame.time.get_ticks()
+
                         if event.button == 1 and not flagged[row][col]:
                             if grid[row][col] == 9:
                                 revealed[row][col] = True
@@ -343,6 +366,8 @@ def run_game():
                                 revealed[row][col] = True
                         elif event.button == 3 and not revealed[row][col]:
                             flagged[row][col] = not flagged[row][col]
+                            flags_used += 1 if flagged[row][col] else -1
+
                         if check_win():
                             win = True
             else:
@@ -355,33 +380,45 @@ def run_game():
                         state = "menu"
                         return
 
+        # Calculate elapsed time or fix it on game end
+        if start_time and not (game_over or win):
+            elapsed_sec = (pygame.time.get_ticks() - start_time) // 1000
+        elif (game_over or win) and final_time is None:
+            # Store final time once when game ends
+            final_time = (pygame.time.get_ticks() - start_time) // 1000
+            elapsed_sec = final_time
+        else:
+            elapsed_sec = final_time if final_time is not None else 0
+
+        # DRAWING PHASE
         screen.fill(BG_COLOR)
+
+        # Draw top bar
+        pygame.draw.rect(screen, (220, 220, 220), (0, 0, WIDTH, TOP_BAR_HEIGHT))
+        bombs_left = current_settings["bombs"] - flags_used
+        bomb_text = BUTTON_FONT.render(f"Bombas: {bombs_left}", True, (0, 0, 0))
+        screen.blit(bomb_text, (10, 5))
+
+        time_text = BUTTON_FONT.render(f"Tempo: {elapsed_sec}s", True, (0, 0, 0))
+        screen.blit(time_text, (WIDTH - time_text.get_width() - 10, 5))
+
         if game_over:
-            draw_text_center("Perdeste!", HEIGHT // 2 - 20)
+            draw_text_center("Perdeste!", HEIGHT // 2 - 40)
             draw_button("Denovo", restart_rect)
             draw_button("Menu", main_menu_rect)
         elif win:
-            draw_text_center("Ganhaste!", HEIGHT // 2 - 20)
+            draw_text_center("Ganhaste!", HEIGHT // 2 - 40)
+            if final_time is not None:
+                time_finish_text = BUTTON_FONT.render(f"Tempo final: {final_time}s", True, (0, 0, 0))
+                screen.blit(time_finish_text, ((WIDTH - time_finish_text.get_width()) // 2, HEIGHT // 2))
             draw_button("Denovo", restart_rect)
             draw_button("Menu", main_menu_rect)
         else:
-            draw_grid()
+            draw_grid(offset_y=TOP_BAR_HEIGHT)
 
         pygame.display.flip()
 
 
-        screen.fill(BG_COLOR)
-        if game_over:
-            draw_text_center("Perdeste!", HEIGHT // 2 - 20)
-            draw_button("Denovo", restart_rect)
-            draw_button("Menu", main_menu_rect)
-        elif win:
-            draw_text_center("Ganhaste!", HEIGHT // 2 - 20)
-            draw_button("Denovo", restart_rect)
-            draw_button("Menu", main_menu_rect)
-        else:
-            draw_grid()
-        pygame.display.flip()
 
 def main():
     global state
